@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Feed</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+<style>
+  :root{
+    --bg:#0e1013;
+    --panel:#16191d;
+    --line:#262a30;
+    --text:#e9edf1;
+    --muted:#8b93a0;
+    --accent:#39c3a0;
+    --accent-dim:#1f6e5c;
+    --danger:#e5484d;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    min-height:100vh;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+  }
+  .card{
+    width:100%;
+    max-width:520px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:28px;
+  }
+  h1{
+    font-size:20px;
+    margin:0 0 4px;
+    letter-spacing:-0.01em;
+  }
+  .sub{
+    color:var(--muted);
+    font-size:13.5px;
+    margin:0 0 22px;
+    line-height:1.5;
+  }
+  .tabs{
+    display:flex;
+    gap:6px;
+    background:#101215;
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:4px;
+    margin-bottom:20px;
+  }
+  .tab{
+    flex:1;
+    text-align:center;
+    padding:9px 10px;
+    border-radius:7px;
+    font-size:13.5px;
+    color:var(--muted);
+    cursor:pointer;
+    user-select:none;
+    transition:background .15s, color .15s;
+  }
+  .tab.active{
+    background:var(--accent-dim);
+    color:#eafff9;
+  }
+  .panel{display:none;}
+  .panel.active{display:block;}
+  video{
+    width:100%;
+    border-radius:10px;
+    background:#000;
+    display:block;
+    margin-bottom:14px;
+    aspect-ratio:16/9;
+    object-fit:cover;
+  }
+  button{
+    width:100%;
+    padding:12px 14px;
+    border-radius:9px;
+    border:none;
+    font-size:14.5px;
+    font-weight:600;
+    cursor:pointer;
+    margin-bottom:10px;
+  }
+  .btn-primary{background:var(--accent);color:#052620;}
+  .btn-primary:hover{background:#4fd6b3;}
+  .btn-danger{background:transparent;border:1px solid var(--danger);color:var(--danger);}
+  .btn-danger:hover{background:rgba(229,72,77,.08);}
+  input[type=text]{
+    width:100%;
+    padding:11px 12px;
+    border-radius:9px;
+    border:1px solid var(--line);
+    background:#101215;
+    color:var(--text);
+    font-size:14.5px;
+    margin-bottom:12px;
+  }
+  input[type=text]:focus{outline:1px solid var(--accent);}
+  .code-box{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    background:#101215;
+    border:1px solid var(--line);
+    border-radius:9px;
+    padding:12px 14px;
+    margin-bottom:14px;
+  }
+  .code-box code{
+    flex:1;
+    font-size:16px;
+    letter-spacing:.03em;
+    color:var(--accent);
+    word-break:break-all;
+  }
+  .copy-btn{
+    width:auto;
+    margin:0;
+    padding:8px 12px;
+    background:var(--line);
+    color:var(--text);
+    font-size:12.5px;
+  }
+  .status{
+    font-size:13px;
+    color:var(--muted);
+    margin-bottom:14px;
+    min-height:18px;
+  }
+  .status.live{color:var(--accent);}
+  .status.err{color:var(--danger);}
+  label.field-label{
+    font-size:12.5px;
+    color:var(--muted);
+    display:block;
+    margin-bottom:6px;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Live Feed</h1>
+  <p class="sub">Streams your camera and microphone straight to another device over a peer-to-peer connection — nothing is uploaded or recorded.</p>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="host">Go live</div>
+    <div class="tab" data-tab="watch">Watch a stream</div>
+  </div>
+
+  <!-- HOST PANEL -->
+  <div class="panel active" id="panel-host">
+    <video id="hostVideo" autoplay muted playsinline></video>
+    <div class="status" id="hostStatus">Not live yet.</div>
+    <div id="codeArea" style="display:none;">
+      <label class="field-label">Share this code with your viewer</label>
+      <div class="code-box">
+        <code id="hostCode">—</code>
+        <button class="copy-btn" id="copyBtn">Copy</button>
+      </div>
+    </div>
+    <button class="btn-primary" id="goLiveBtn">Go live</button>
+    <button class="btn-danger" id="stopHostBtn" style="display:none;">Stop broadcasting</button>
+  </div>
+
+  <!-- WATCH PANEL -->
+  <div class="panel" id="panel-watch">
+    <video id="watchVideo" autoplay playsinline></video>
+    <div class="status" id="watchStatus">Enter the code you were given.</div>
+    <label class="field-label">Stream code</label>
+    <input type="text" id="watchCodeInput" placeholder="e.g. 7f3a2b91-...">
+    <button class="btn-primary" id="connectBtn">Connect</button>
+    <button class="btn-danger" id="stopWatchBtn" style="display:none;">Disconnect</button>
+  </div>
+</div>
+
+<script>
+const tabs = document.querySelectorAll('.tab');
+const panels = { host: document.getElementById('panel-host'), watch: document.getElementById('panel-watch') };
+tabs.forEach(t => t.addEventListener('click', () => {
+  tabs.forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  Object.values(panels).forEach(p => p.classList.remove('active'));
+  panels[t.dataset.tab].classList.add('active');
+}));
+
+// ---------- HOST ----------
+let hostPeer = null;
+let localStream = null;
+
+const goLiveBtn = document.getElementById('goLiveBtn');
+const stopHostBtn = document.getElementById('stopHostBtn');
+const hostStatus = document.getElementById('hostStatus');
+const hostVideo = document.getElementById('hostVideo');
+const codeArea = document.getElementById('codeArea');
+const hostCode = document.getElementById('hostCode');
+const copyBtn = document.getElementById('copyBtn');
+
+goLiveBtn.addEventListener('click', async () => {
+  hostStatus.textContent = 'Requesting camera and microphone…';
+  hostStatus.className = 'status';
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  } catch (err) {
+    hostStatus.textContent = 'Could not access camera/microphone: ' + err.message;
+    hostStatus.className = 'status err';
+    return;
+  }
+  hostVideo.srcObject = localStream;
+
+  hostPeer = new Peer();
+  hostPeer.on('open', id => {
+    hostCode.textContent = id;
+    codeArea.style.display = 'block';
+    hostStatus.textContent = 'Live — waiting for a viewer to connect.';
+    hostStatus.className = 'status live';
+    goLiveBtn.style.display = 'none';
+    stopHostBtn.style.display = 'block';
+  });
+  hostPeer.on('call', call => {
+    call.answer(localStream);
+    hostStatus.textContent = 'Live — viewer connected.';
+    hostStatus.className = 'status live';
+  });
+  hostPeer.on('error', err => {
+    hostStatus.textContent = 'Connection error: ' + err.type;
+    hostStatus.className = 'status err';
+  });
+});
+
+stopHostBtn.addEventListener('click', () => {
+  if (localStream) localStream.getTracks().forEach(t => t.stop());
+  if (hostPeer) hostPeer.destroy();
+  hostVideo.srcObject = null;
+  codeArea.style.display = 'none';
+  hostStatus.textContent = 'Not live yet.';
+  hostStatus.className = 'status';
+  goLiveBtn.style.display = 'block';
+  stopHostBtn.style.display = 'none';
+});
+
+// ---------- WATCH ----------
+let watchPeer = null;
+let activeCall = null;
+
+const connectBtn = document.getElementById('connectBtn');
+const stopWatchBtn = document.getElementById('stopWatchBtn');
+const watchStatus = document.getElementById('watchStatus');
+const watchVideo = document.getElementById('watchVideo');
+const watchCodeInput = document.getElementById('watchCodeInput');
+
+connectBtn.addEventListener('click', () => {
+  const code = watchCodeInput.value.trim();
+  if (!code) {
+    watchStatus.textContent = 'Enter a stream code first.';
+    watchStatus.className = 'status err';
+    return;
+  }
+  watchStatus.textContent = 'Connecting…';
+  watchStatus.className = 'status';
+
+  watchPeer = new Peer();
+  watchPeer.on('open', () => {
+    // Call with an empty stream — we only want to receive, not send
+    const silentStream = new MediaStream();
+    activeCall = watchPeer.call(code, silentStream);
+    activeCall.on('stream', remoteStream => {
+      watchVideo.srcObject = remoteStream;
+      watchStatus.textContent = 'Connected — streaming live.';
+      watchStatus.className = 'status live';
+      connectBtn.style.display = 'none';
+      stopWatchBtn.style.display = 'block';
+    });
+    activeCall.on('close', () => {
+      watchStatus.textContent = 'Broadcast ended.';
+      watchStatus.className = 'status';
+    });
+    activeCall.on('error', err => {
+      watchStatus.textContent = 'Call error: ' + err;
+      watchStatus.className = 'status err';
+    });
+  });
+  watchPeer.on('error', err => {
+    watchStatus.textContent = 'Could not connect: ' + err.type + ' (check the code and try again)';
+    watchStatus.className = 'status err';
+  });
+});
+
+stopWatchBtn.addEventListener('click', () => {
+  if (activeCall) activeCall.close();
+  if (watchPeer) watchPeer.destroy();
+  watchVideo.srcObject = null;
+  watchStatus.textContent = 'Enter the code you were given.';
+  watchStatus.className = 'status';
+  connectBtn.style.display = 'block';
+  stopWatchBtn.style.display = 'none';
+});
+
+copyBtn.addEventListener('click', () => {
+  navigator.clipboard.writeText(hostCode.textContent).then(() => {
+    copyBtn.textContent = 'Copied!';
+    setTimeout(() => copyBtn.textContent = 'Copy', 1500);
+  });
+});
+</script>
+
+</body>
+</html>
